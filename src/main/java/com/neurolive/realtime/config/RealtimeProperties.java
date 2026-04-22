@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-// Centraliza la configuración externa del servicio realtime.
+// Centraliza la configuracion externa del servicio realtime.
 @ConfigurationProperties(prefix = "realtime")
 public class RealtimeProperties {
 
@@ -16,27 +16,27 @@ public class RealtimeProperties {
     private final Telemetry telemetry = new Telemetry();
     private final Integration integration = new Integration();
 
-    // Expone la configuración WebSocket.
+    // Expone la configuracion WebSocket.
     public WebSocket getWebsocket() {
         return websocket;
     }
 
-    // Expone la configuración de seguridad básica.
+    // Expone la configuracion de seguridad basica.
     public Security getSecurity() {
         return security;
     }
 
-    // Expone la configuración de heartbeat.
+    // Expone la configuracion de heartbeat.
     public Heartbeat getHeartbeat() {
         return heartbeat;
     }
 
-    // Expone la configuración de telemetría.
+    // Expone la configuracion de telemetria.
     public Telemetry getTelemetry() {
         return telemetry;
     }
 
-    // Expone la configuración de integración futura.
+    // Expone la configuracion de integracion futura.
     public Integration getIntegration() {
         return integration;
     }
@@ -57,12 +57,12 @@ public class RealtimeProperties {
             this.endpoint = endpoint;
         }
 
-        // Retorna los orígenes permitidos.
+        // Retorna los origenes permitidos.
         public List<String> getAllowedOrigins() {
             return allowedOrigins;
         }
 
-        // Define los orígenes permitidos.
+        // Define los origenes permitidos.
         public void setAllowedOrigins(List<String> allowedOrigins) {
             this.allowedOrigins = allowedOrigins;
         }
@@ -84,7 +84,7 @@ public class RealtimeProperties {
         }
     }
 
-    // Agrupa la configuración de monitoreo por heartbeat.
+    // Agrupa la configuracion de monitoreo por heartbeat.
     public static class Heartbeat {
 
         private long timeoutSeconds = 15;
@@ -100,37 +100,39 @@ public class RealtimeProperties {
             this.timeoutSeconds = timeoutSeconds;
         }
 
-        // Retorna el intervalo de revisión.
+        // Retorna el intervalo de revision.
         public long getCheckIntervalMillis() {
             return checkIntervalMillis;
         }
 
-        // Define el intervalo de revisión.
+        // Define el intervalo de revision.
         public void setCheckIntervalMillis(long checkIntervalMillis) {
             this.checkIntervalMillis = checkIntervalMillis;
         }
     }
 
-    // Agrupa la configuración de almacenamiento de telemetría.
+    // Agrupa la configuracion de almacenamiento de telemetria.
     public static class Telemetry {
 
         private int historyLimit = 20;
 
-        // Retorna el límite del historial reciente.
+        // Retorna el limite del historial reciente.
         public int getHistoryLimit() {
             return historyLimit;
         }
 
-        // Define el límite del historial reciente.
+        // Define el limite del historial reciente.
         public void setHistoryLimit(int historyLimit) {
             this.historyLimit = historyLimit;
         }
     }
 
-    // Agrupa la configuración para integración futura.
+    // Agrupa la configuracion para integracion futura.
     public static class Integration {
 
         private String baseUrl = "";
+        private String internalToken = "";
+        private long timeoutMs = 3_000;
 
         // Retorna la URL base del backend principal.
         public String getBaseUrl() {
@@ -140,6 +142,26 @@ public class RealtimeProperties {
         // Define la URL base del backend principal.
         public void setBaseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
+        }
+
+        // Retorna el token interno para llamadas seguras.
+        public String getInternalToken() {
+            return internalToken;
+        }
+
+        // Define el token interno para llamadas seguras.
+        public void setInternalToken(String internalToken) {
+            this.internalToken = internalToken;
+        }
+
+        // Retorna el timeout de integracion HTTP.
+        public long getTimeoutMs() {
+            return timeoutMs;
+        }
+
+        // Define el timeout de integracion HTTP.
+        public void setTimeoutMs(long timeoutMs) {
+            this.timeoutMs = timeoutMs;
         }
     }
 }
