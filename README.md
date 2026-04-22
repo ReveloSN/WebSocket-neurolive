@@ -48,11 +48,15 @@ Neuro Live Realtime Service (this repo)
   |- future backend integration hooks
   v
 Main Backend (existing, separate)
-  |- domain rules
-  |- linking and consent flows
+  |- consent and linking flows
+  |- audit persistence
+  |- core domain rules
   |- clinical logic
   |- dashboards and reports
 ```
+
+The main backend remains responsible for **consent**, **audit**, and the **core domain rules** of Neuro Live.  
+This realtime service stays focused on transport, sessions, telemetry, and device commands.
 
 ## Flow: ESP32 -> Realtime Service -> Main Backend
 
@@ -63,6 +67,21 @@ Main Backend (existing, separate)
 5. A REST client or future backend integration can send a light command to the device.
 6. If the device stops sending telemetry or heartbeat for the configured timeout, the service marks it as disconnected.
 7. Internal events are published so a future integration layer can forward telemetry, disconnections, and command acknowledgements to the main backend.
+
+## Connection Loss, Reconnection, and Local Fallback
+
+When the ESP32 loses connectivity with the realtime service, the expected behavior is:
+
+1. The service marks the device as disconnected after the configured heartbeat timeout.
+2. The ESP32 keeps a **basic local fallback behavior** so the hardware can remain minimally useful and safe without the server.
+3. That fallback can mean keeping the last safe hardware state, switching to a simple local safe mode, or continuing minimal autonomous logic in firmware.
+4. The ESP32 retries the WebSocket connection using a simple reconnect strategy such as delayed retries or exponential backoff.
+5. After reconnecting, the ESP32 must send a new `auth` message before sending telemetry, heartbeat, or acknowledgements again.
+
+Authentication is **session-based**, not permanent across reconnects.  
+Every new WebSocket connection must authenticate again.
+
+If a device reconnects with the same `deviceId`, the newest authenticated session becomes the active one and the older session is replaced.
 
 ## Scope Covered by This Repo
 
@@ -103,10 +122,10 @@ It intentionally does **not** implement the full clinical domain logic.
 
 ### Still owned by the main backend
 
-- biometric consent management
-- full audit persistence
-- patient/user/doctor/caregiver domain rules
-- advanced crisis detection logic
+- explicit biometric consent management
+- audit persistence and traceability policies
+- patient, caregiver, and doctor domain rules
+- core domain decisions and clinical workflows
 - account linking and authorization policies
 
 ## Tech Stack
@@ -123,14 +142,14 @@ It intentionally does **not** implement the full clinical domain logic.
 
 ```text
 src/main/java/com/neurolive/realtime
-├── config
-├── controller
-├── dto
-├── exception
-├── model
-├── service
-└── websocket
-    └── processor
+|-- config
+|-- controller
+|-- dto
+|-- exception
+|-- model
+|-- service
+`-- websocket
+    `-- processor
 ```
 
 ## Message Types
@@ -212,6 +231,12 @@ src/main/java/com/neurolive/realtime
   "mode": "calm"
 }
 ```
+
+Allowed `mode` values:
+
+- `calm`
+- `steady`
+- `pulse`
 
 ## Configuration
 
@@ -346,7 +371,7 @@ This repository is ready for Railway because:
 - `server.port` is bound to `PORT`
 - configuration is environment-variable friendly
 - the project includes Maven Wrapper
-- a simple `Dockerfile` is included
+- the Docker build enables the wrapper for Linux environments before packaging
 
 ### Suggested Railway environment variables
 
@@ -373,9 +398,9 @@ Option 2:
 
 See [websocket-test-examples.md](./websocket-test-examples.md) for:
 
-- WebSocket auth examples
-- telemetry and heartbeat examples
-- ack examples
+- valid auth, telemetry, and heartbeat examples
+- command dispatch and ack examples
+- reconnection and re-authentication examples
 - REST examples for commands and status
 - expected behaviors for invalid cases
 
@@ -402,6 +427,7 @@ Later it can be replaced by a real HTTP client, message relay, or secure interna
 - no persistent audit store is implemented here
 - no advanced domain or clinical logic is included here
 - no TLS termination is managed in-app; it should be handled by the deployment platform or gateway
+- firmware-side fallback behavior must still be implemented on the ESP32 side
 
 ## Possible Future Improvements
 

@@ -13,9 +13,14 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
 
-// Recibe y conserva la telemetría reciente en memoria.
+// Recibe y conserva la telemetria reciente en memoria.
 @Service
 public class TelemetryIngestionService {
+
+    private static final int MIN_BPM = 25;
+    private static final int MAX_BPM = 250;
+    private static final int MIN_SPO2 = 50;
+    private static final int MAX_SPO2 = 100;
 
     private final RealtimeProperties realtimeProperties;
     private final ConnectionStatusService connectionStatusService;
@@ -23,7 +28,7 @@ public class TelemetryIngestionService {
     private final ConcurrentHashMap<String, TelemetrySnapshot> latestTelemetryByDeviceId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ArrayDeque<TelemetrySnapshot>> telemetryHistoryByDeviceId = new ConcurrentHashMap<>();
 
-    // Recibe los colaboradores necesarios para almacenar telemetría.
+    // Recibe los colaboradores necesarios para almacenar telemetria.
     public TelemetryIngestionService(RealtimeProperties realtimeProperties,
                                      ConnectionStatusService connectionStatusService,
                                      RealtimeEventPublisher realtimeEventPublisher) {
@@ -32,7 +37,7 @@ public class TelemetryIngestionService {
         this.realtimeEventPublisher = realtimeEventPublisher;
     }
 
-    // Valida y almacena una telemetría entrante.
+    // Valida y almacena una telemetria entrante.
     public TelemetrySnapshot storeTelemetry(TelemetryMessage telemetryMessage) {
         validateTelemetryMessage(telemetryMessage);
         Instant receivedAt = Instant.now();
@@ -56,7 +61,7 @@ public class TelemetryIngestionService {
         return snapshot;
     }
 
-    // Obtiene la última telemetría conocida.
+    // Obtiene la ultima telemetria conocida.
     public Optional<TelemetrySnapshot> getLatestTelemetry(String deviceId) {
         return Optional.ofNullable(latestTelemetryByDeviceId.get(deviceId));
     }
@@ -72,7 +77,7 @@ public class TelemetryIngestionService {
         }
     }
 
-    // Valida los campos requeridos de la telemetría.
+    // Valida los campos requeridos de la telemetria.
     private void validateTelemetryMessage(TelemetryMessage telemetryMessage) {
         if (telemetryMessage == null) {
             throw new InvalidDeviceMessageException("Telemetry payload is required");
@@ -80,11 +85,18 @@ public class TelemetryIngestionService {
         if (telemetryMessage.deviceId() == null || telemetryMessage.deviceId().isBlank()) {
             throw new InvalidDeviceMessageException("Telemetry deviceId is required");
         }
-        if (telemetryMessage.bpm() == null || telemetryMessage.bpm() < 0) {
-            throw new InvalidDeviceMessageException("Telemetry bpm must be a non-negative integer");
+        if (telemetryMessage.timestamp() == null || telemetryMessage.timestamp() <= 0) {
+            throw new InvalidDeviceMessageException("Telemetry timestamp must be present and greater than zero");
         }
-        if (telemetryMessage.spo2() == null || telemetryMessage.spo2() < 0 || telemetryMessage.spo2() > 100) {
-            throw new InvalidDeviceMessageException("Telemetry spo2 must be between 0 and 100");
+        if (telemetryMessage.bpm() == null || telemetryMessage.bpm() < MIN_BPM || telemetryMessage.bpm() > MAX_BPM) {
+            throw new InvalidDeviceMessageException(
+                    "Telemetry bpm must be between " + MIN_BPM + " and " + MAX_BPM
+            );
+        }
+        if (telemetryMessage.spo2() == null || telemetryMessage.spo2() < MIN_SPO2 || telemetryMessage.spo2() > MAX_SPO2) {
+            throw new InvalidDeviceMessageException(
+                    "Telemetry spo2 must be between " + MIN_SPO2 + " and " + MAX_SPO2
+            );
         }
         if (telemetryMessage.sensorConnected() == null) {
             throw new InvalidDeviceMessageException("Telemetry sensorConnected is required");
