@@ -1,28 +1,14 @@
-# WebSocket Test Examples
+# Manual WebSocket Test Examples
 
-## WebSocket Endpoint
+## 1. Connect to the device channel
 
-- Local: `ws://localhost:8080/ws/device`
-- Railway: `wss://<your-railway-domain>/ws/device`
-
-## Suggested Tools
-
-- Postman WebSocket client
-- `wscat`
-
-Install `wscat` if needed:
-
-```bash
-npm install -g wscat
-```
-
-Connect locally:
+Example with `wscat`:
 
 ```bash
 wscat -c ws://localhost:8080/ws/device
 ```
 
-## 1. Valid auth
+## 2. Authenticate the ESP32
 
 Send:
 
@@ -38,21 +24,13 @@ Expected response:
 
 ```json
 {
-  "type": "auth_result",
+  "type": "auth_ok",
   "deviceId": "ESP32_001",
-  "authenticated": true,
-  "message": "Authentication successful"
+  "timestamp": "2026-04-23T00:00:00+00:00"
 }
 ```
 
-Notes:
-
-- this is the required first step for every new WebSocket session
-- if the device reconnects later, it must authenticate again
-
-## 2. Valid telemetry
-
-Send:
+## 3. Send telemetry
 
 ```json
 {
@@ -65,18 +43,7 @@ Send:
 }
 ```
 
-Expected behavior:
-
-- message is accepted
-- latest telemetry is stored
-- device activity is updated
-- `timestamp` must be present and greater than zero
-- `bpm` must be within the accepted range
-- `spo2` must be within the accepted range
-
-## 3. Valid heartbeat
-
-Send:
+## 4. Send heartbeat
 
 ```json
 {
@@ -86,15 +53,57 @@ Send:
 }
 ```
 
-Expected behavior:
+## 5. Send ACK for a command
 
-- heartbeat is accepted
-- last activity is refreshed
-- timeout counter is effectively reset
+```json
+{
+  "type": "ack",
+  "deviceId": "ESP32_001",
+  "commandId": "cmd-001",
+  "status": "applied"
+}
+```
 
-## 4. Command dispatch
+## 6. Telemetry without auth
 
-REST request:
+If telemetry is sent before `auth`, the gateway returns an error and closes the socket:
+
+```json
+{
+  "type": "error",
+  "code": "unauthenticated",
+  "message": "Authenticate first"
+}
+```
+
+## 7. Invalid JSON
+
+If the payload is not valid JSON, the socket is closed with an `invalid_json` error.
+
+## 8. Device mismatch
+
+If the session is authenticated as `ESP32_001` and then sends a message with another `deviceId`,
+the gateway closes the connection with `device_mismatch`.
+
+## 9. Check connected devices
+
+```bash
+curl http://localhost:8080/api/devices/connected
+```
+
+## 10. Check device status
+
+```bash
+curl http://localhost:8080/api/devices/ESP32_001/status
+```
+
+## 11. Check latest telemetry
+
+```bash
+curl http://localhost:8080/api/devices/ESP32_001/telemetry/latest
+```
+
+## 12. Send a light command from REST
 
 ```bash
 curl -X POST http://localhost:8080/api/devices/ESP32_001/commands/light \
@@ -102,24 +111,12 @@ curl -X POST http://localhost:8080/api/devices/ESP32_001/commands/light \
   -d "{\"color\":\"#4A90E2\",\"intensity\":60,\"mode\":\"calm\"}"
 ```
 
-Expected REST response:
-
-```json
-{
-  "deviceId": "ESP32_001",
-  "commandId": "generated-uuid",
-  "action": "set_light",
-  "status": "sent",
-  "sentAt": "2026-04-22T00:00:00Z"
-}
-```
-
-Expected WebSocket message on the device connection:
+Expected WebSocket message on the device side:
 
 ```json
 {
   "type": "command",
-  "commandId": "generated-uuid",
+  "commandId": "cmd-001",
   "action": "set_light",
   "payload": {
     "color": "#4A90E2",
@@ -129,162 +126,48 @@ Expected WebSocket message on the device connection:
 }
 ```
 
-Notes:
-
-- `color` must use the format `#RRGGBB`
-- `mode` must be one of `calm`, `steady`, or `pulse`
-
-## 5. Ack
-
-Send:
-
-```json
-{
-  "type": "ack",
-  "deviceId": "ESP32_001",
-  "commandId": "generated-uuid",
-  "status": "applied"
-}
-```
-
-Expected behavior:
-
-- ack is accepted
-- internal event is published
-- mock backend integration logs the acknowledgement
-
-## 6. Telemetry without auth
-
-Send a valid telemetry message before sending `auth`.
-
-Example:
-
-```json
-{
-  "type": "telemetry",
-  "deviceId": "ESP32_001",
-  "timestamp": 1710000000,
-  "bpm": 92,
-  "spo2": 98,
-  "sensorConnected": true
-}
-```
-
-Expected behavior:
-
-- service sends an `error` message
-- connection is closed
-
-## 7. Mismatched deviceId
-
-Authenticate as `ESP32_001` and then send:
-
-```json
-{
-  "type": "heartbeat",
-  "deviceId": "ESP32_999",
-  "timestamp": 1710000002
-}
-```
-
-Expected behavior:
-
-- service sends an `error` message
-- connection is closed because the message device does not match the authenticated session
-
-## 8. Timeout
-
-Authenticate and stop sending telemetry or heartbeat for more than the configured timeout.
-
-Expected behavior:
-
-- the service marks the device as disconnected
-- the WebSocket session is closed
-- a disconnect event is logged
-
-## 9. Reconnection
-
-1. Connect and authenticate normally.
-2. Let the session close because of timeout, or close the client manually.
-3. Open a new WebSocket connection to `ws://localhost:8080/ws/device`.
-4. Send the `auth` message again.
-5. Resume heartbeat and telemetry traffic.
-
-Expected behavior:
-
-- the new socket is treated as a new session
-- previous authentication state is not reused automatically
-- telemetry and heartbeat are accepted only after the new `auth` message
-- if the same `deviceId` reconnects, the newest authenticated session becomes the active one
-
-## REST Checks
-
-### Connected devices
+## 13. Read fallback config
 
 ```bash
-curl http://localhost:8080/api/devices/connected
+curl http://localhost:8080/api/devices/fallback-config
 ```
 
-### Device status
-
-```bash
-curl http://localhost:8080/api/devices/ESP32_001/status
-```
-
-### Latest telemetry
-
-```bash
-curl http://localhost:8080/api/devices/ESP32_001/telemetry/latest
-```
-
-## Negative Tests
-
-### Invalid JSON
-
-Send:
-
-```json
-{ "type":
-```
-
-Expected behavior:
-
-- service sends an `error` message
-- connection is closed
-
-### Telemetry before auth
-
-Send telemetry without sending `auth` first.
-
-Expected behavior:
-
-- service sends an `error` message
-- connection is closed
-
-### Device mismatch
-
-Authenticate as `ESP32_001` and then send:
+Expected response:
 
 ```json
 {
-  "type": "heartbeat",
-  "deviceId": "ESP32_999",
-  "timestamp": 1710000002
+  "ledColor": "#4A90E2",
+  "ledIntensity": 60,
+  "ledMode": "calm",
+  "heartbeatIntervalSeconds": 10,
+  "description": "Calm mode - backend unavailable"
 }
 ```
 
-Expected behavior:
+## 14. Health checks
 
-- service sends an `error` message
-- connection is closed because the message device does not match the authenticated session
+```bash
+curl http://localhost:8080/health
+curl http://localhost:8080/actuator/health
+```
 
-### Heartbeat timeout
+## 15. Timeout scenario
 
-Authenticate and stop sending telemetry or heartbeat for more than the configured timeout.
+1. Authenticate the device normally.
+2. Stop sending both `telemetry` and `heartbeat`.
+3. Wait longer than `HEARTBEAT_TIMEOUT_SECONDS`.
+4. Expected result:
+   - the socket closes
+   - the device status eventually becomes `disconnected`
+   - the backend receives `/internal/devices/{id}/disconnected` when integration is enabled
 
-Expected behavior:
+## 16. Reconnection scenario
 
-- the service marks the device as disconnected
-- the WebSocket session is closed
-- a disconnect event is logged
-
+1. Connect and authenticate as `ESP32_001`.
+2. Close the socket or let it timeout.
+3. Open a new WebSocket connection to `/ws/device`.
+4. Send `auth` again with the same `deviceId` and token.
+5. Expected result:
+   - the new session becomes active
+   - telemetry is accepted again only after the new `auth`
+   - if an older session still existed, the newest one replaces it
