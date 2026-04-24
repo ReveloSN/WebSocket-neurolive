@@ -1,10 +1,16 @@
-FROM maven:3.9.9-eclipse-temurin-17 AS build
-WORKDIR /app
-COPY . .
-RUN sed -i 's/\r$//' mvnw && chmod +x mvnw && ./mvnw -q -DskipTests package
+FROM python:3.11-slim
 
-FROM eclipse-temurin:17-jre
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
-COPY --from=build /app/target/neurolive-realtime-service-0.0.1-SNAPSHOT.jar app.jar
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY app ./app
+COPY README.md websocket-test-examples.md ./
+
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
