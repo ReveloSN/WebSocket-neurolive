@@ -72,6 +72,9 @@ class BackendClient:
                 "sensorConnected": snapshot.sensor_connected,
                 "deviceTimestamp": snapshot.device_timestamp,
                 "receivedAt": snapshot.received_at.isoformat(),
+                "predictionState": snapshot.prediction_state,
+                "predictionConfidence": snapshot.prediction_confidence,
+                "predictionReasoning": snapshot.prediction_reasoning,
             },
             context=f"telemetry deviceId={snapshot.device_id}",
         )
