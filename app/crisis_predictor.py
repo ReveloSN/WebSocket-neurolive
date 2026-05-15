@@ -100,7 +100,7 @@ class CrisisPredictor:
             )
 
         bpm_rising = summary.bpm_trend >= self._settings.warning_bpm_trend_threshold
-        spo2_falling = summary.spo2_trend >= self._settings.warning_spo2_trend_threshold
+        spo2_falling = summary.spo2_drop >= self._settings.warning_spo2_trend_threshold
         weak_sensor = summary.sensor_connected_ratio < 0.8
 
         if bpm_rising and spo2_falling:
@@ -165,7 +165,7 @@ class CrisisPredictor:
             f"bpmStart={summary.first_bpm:.1f}, bpmEnd={summary.last_bpm:.1f}, "
             f"bpmAverage={summary.average_bpm:.1f}, bpmTrend={summary.bpm_trend:.1f}, "
             f"spo2Start={summary.first_spo2:.1f}, spo2End={summary.last_spo2:.1f}, "
-            f"spo2Average={summary.average_spo2:.1f}, spo2Drop={summary.spo2_trend:.1f}, "
+            f"spo2Average={summary.average_spo2:.1f}, spo2Drop={summary.spo2_drop:.1f}, "
             f"sensorConnectedRatio={summary.sensor_connected_ratio:.2f}."
         )
         response = self._model.generate_content(

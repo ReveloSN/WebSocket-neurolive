@@ -21,7 +21,7 @@ class TelemetryWindowSummary:
     first_spo2: float
     last_spo2: float
     average_spo2: float
-    spo2_trend: float
+    spo2_drop: float
     sensor_connected_ratio: float
 
 
@@ -75,6 +75,6 @@ class SlidingWindowBuffer:
             first_spo2=first.spo2,
             last_spo2=last.spo2,
             average_spo2=sum(spo2_values) / sample_count,
-            spo2_trend=first.spo2 - last.spo2,
+            spo2_drop=first.spo2 - last.spo2,
             sensor_connected_ratio=sensor_connected_count / sample_count,
         )
