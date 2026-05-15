@@ -178,7 +178,11 @@ class CrisisPredictor:
     def _parse_gemini_response(self, response_text: str) -> PredictionResult:
         cleaned = response_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         data = json.loads(cleaned)
-        state = PredictionState(str(data.get("predictionState", "WARNING")).strip().upper())
+        raw_state = str(data.get("predictionState", "WARNING")).strip().upper()
+        try:
+            state = PredictionState(raw_state)
+        except ValueError:
+            state = PredictionState.WARNING
         confidence = self._clamp_float(data.get("predictionConfidence"), 0.55)
         reasoning = str(data.get("predictionReasoning", "AI prediction available")).strip()
         return PredictionResult(state, confidence, reasoning[:220])
