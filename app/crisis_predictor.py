@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from enum import StrEnum
+from enum import Enum
 
 from app.config import PredictionSettings
 from app.sliding_window import SlidingWindowBuffer, TelemetryWindowSummary
@@ -15,7 +15,7 @@ from app.state import TelemetrySnapshot
 LOGGER = logging.getLogger("neurolive.realtime.predictor")
 
 
-class PredictionState(StrEnum):
+class PredictionState(str, Enum):
     STABLE = "STABLE"
     WARNING = "WARNING"
     PRE_CRISIS = "PRE_CRISIS"
