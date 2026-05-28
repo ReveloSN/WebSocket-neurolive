@@ -9,10 +9,11 @@ Its responsibility is to keep a low-latency communication channel between the ES
 - accepts ESP32 WebSocket connections on `/ws/device`
 - authenticates devices with `deviceId + token`
 - receives telemetry, heartbeat, and command acknowledgements
-- stores active sessions and recent telemetry in memory
+- runs a sliding-window **crisis predictor** (local heuristics + optional Gemini) on each telemetry sample
+- stores active sessions and recent telemetry in memory (including prediction fields)
 - detects inactivity timeouts and disconnects stale sessions
 - exposes REST endpoints for device status, fallback config, and light commands
-- forwards internal events to the main backend using `X-Internal-Token`
+- forwards internal events and prediction metadata to the main backend using `X-Internal-Token`
 
 ## What This Service Does Not Do
 
@@ -31,6 +32,8 @@ The **main backend** remains responsible for:
 
 ## Architecture
 
+> **No confundir con el WebSocket del backend:** `neuro-live-backend` expone STOMP en `/ws/patient-state` para dashboards (JWT de usuario). **Este** servicio usa WebSocket JSON crudo en `/ws/device` solo para ESP32.
+
 ```text
 ESP32
   |
@@ -41,14 +44,20 @@ neurolive-realtime-py
   | HTTP internal calls with X-Internal-Token
   v
 neuro-live-backend
+       |
+       | STOMP /topic/patients/{id}/...
+       v
+   Frontend (cuidador / médico)
 ```
 
 The backend contract used by this gateway is:
 
-- `POST /internal/telemetry`
+- `POST /internal/telemetry` — incluye `predictionState`, `predictionConfidence`, `predictionReasoning`
 - `POST /internal/devices/{id}/authenticated`
 - `POST /internal/devices/{id}/disconnected`
 - `POST /internal/devices/validate-token`
+
+Ver detalle de payloads en `neuro-live-backend/docs/api-routes.md` (sección *Endpoints internos*).
 
 ## Main Features
 
@@ -68,9 +77,11 @@ app/
   __init__.py
   backend.py
   config.py
+  crisis_predictor.py
   main.py
   schemas.py
   service.py
+  sliding_window.py
   state.py
 tests/
   test_api.py
@@ -93,14 +104,15 @@ websocket-test-examples.md
 
 ### Device authentication
 
-- `DEVICE_TOKEN_ESP32_001=abc123`
-- `DEVICE_TOKEN_ESP32_002=def456`
-- `DEVICE_TOKENS_JSON={"ESP32_003":"ghi789"}`
+- `DEVICE_TOKENS_JSON={"AA:BB:CC:DD:EE:29":"abc123"}`
+- `DEVICE_TOKEN_ESP32_001=abc123` (standalone local tests only)
 
 If local device tokens are configured, validation is done locally. If no local tokens are present, the service validates against the backend using:
 
 - `BACKEND_BASE_URL`
 - `INTERNAL_TOKEN`
+
+For backend-integrated runs, `deviceId` should be the registered ESP32 MAC address because the backend resolves the patient from that value.
 
 ### Heartbeat and telemetry
 
@@ -121,6 +133,19 @@ If local device tokens are configured, validation is done locally. If no local t
 - `FALLBACK_LED_MODE` default `calm`
 - `FALLBACK_HEARTBEAT_INTERVAL` default `10`
 - `FALLBACK_DESCRIPTION` default `Calm mode - backend unavailable`
+
+### Crisis prediction (optional)
+
+- `GEMINI_API_KEY` — vacío desactiva llamadas a Gemini
+- `GEMINI_MODEL` default `gemini-2.5-flash-lite`
+- `GEMINI_ENABLED` default `true` (requiere API key para tener efecto)
+- `PREDICTION_WINDOW_SECONDS` default `30`
+- `PREDICTION_INTERVAL_SECONDS` default `20`
+- `PREDICTION_MIN_SAMPLES` default `8`
+- `WARNING_BPM_TREND` default `12.0`
+- `WARNING_SPO2_TREND` default `2.0`
+
+Estados de predicción enviados al backend en cada telemetría: `STABLE`, `WARNING`, `PRE_CRISIS`, `INSUFFICIENT_DATA`.
 
 ## Running Locally
 
@@ -146,6 +171,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 ### 4. Useful local URLs
 
+- `http://localhost:8080/` — resumen del servicio (`service`, `status`, `wsPath`)
 - `http://localhost:8080/health`
 - `http://localhost:8080/actuator/health`
 - `http://localhost:8080/docs`
@@ -155,22 +181,28 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 | Method | Endpoint | Description |
 |---|---|---|
+| `GET` | `/` | Service summary |
 | `GET` | `/health` | Simple health response |
 | `GET` | `/actuator/health` | Spring-compatible health response |
 | `GET` | `/api/devices/connected` | Connected devices |
 | `GET` | `/api/devices/{deviceId}/status` | Detailed device status |
-| `GET` | `/api/devices/{deviceId}/telemetry/latest` | Latest telemetry and recent history |
+| `GET` | `/api/devices/{deviceId}/telemetry/latest` | Latest telemetry and recent history (includes `predictionState`, `predictionConfidence`, `predictionReasoning`) |
 | `POST` | `/api/devices/{deviceId}/commands/light` | Sends a light command |
 | `GET` | `/api/devices/fallback-config` | Returns fallback hardware config |
 
 ## WebSocket Message Types
 
-- `auth`
-- `telemetry`
-- `heartbeat`
-- `ack`
-- `command` (server to device)
-- `error`
+| Type | Direction | Notes |
+|------|-----------|-------|
+| `auth` | device → server | Required first message |
+| `auth_ok` | server → device | After successful auth |
+| `telemetry` | device → server | `bpm` 25–250, `spo2` 50–100 |
+| `heartbeat` | device → server | Keeps session alive |
+| `ack` | device → server | Command acknowledgement |
+| `command` | server → device | e.g. `set_light` |
+| `error` | server → device | Then connection closes |
+
+Close codes relevantes: `4000` sesión reemplazada, `4001` heartbeat timeout, `4003` credenciales inválidas, `4004` violación de protocolo (sin auth, `device_mismatch`, etc.).
 
 Detailed JSON examples are available in [websocket-test-examples.md](websocket-test-examples.md).
 
@@ -209,7 +241,7 @@ Recommended environment variables:
 - `BACKEND_BASE_URL=https://neurolive-backend.azurewebsites.net`
 - `INTERNAL_TOKEN=<shared-secret>`
 - `WS_ALLOWED_ORIGINS=*`
-- `DEVICE_TOKEN_ESP32_001=abc123`
+- `DEVICE_TOKENS_JSON={"AA:BB:CC:DD:EE:29":"abc123"}`
 
 Container start command:
 

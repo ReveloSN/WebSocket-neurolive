@@ -127,5 +127,13 @@ class BackendClient:
         try:
             response = await self._client.post(path, json=payload)
             response.raise_for_status()
+        except httpx.HTTPStatusError as exception:
+            response_text = exception.response.text[:300]
+            LOGGER.warning(
+                "Backend integration failed for %s status=%s body=%s",
+                context,
+                exception.response.status_code,
+                response_text,
+            )
         except httpx.HTTPError as exception:
             LOGGER.warning("Backend integration failed for %s: %s", context, exception)

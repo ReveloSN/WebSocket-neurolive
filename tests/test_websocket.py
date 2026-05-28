@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from app.backend import BackendClient
 from app.config import FallbackSettings, PredictionSettings, Settings
 from app.main import create_app
+from app.state import TelemetrySnapshot, utc_now
 
 
 # Construye una configuracion local para pruebas del canal.
@@ -87,6 +91,43 @@ def test_auth_and_telemetry_flow() -> None:
     assert telemetry_response.json()["recentHistory"][0]["deviceId"] == "ESP32_001"
 
 
+# Verifica que el payload interno conserva los campos predictivos.
+def test_backend_forwarding_includes_prediction_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = build_settings()
+    settings.backend_base_url = "https://backend.example"
+    backend = BackendClient(settings)
+    captured: dict[str, object] = {}
+
+    async def fake_post_safely(path: str, payload: dict[str, object], context: str) -> None:
+        captured["path"] = path
+        captured["payload"] = payload
+        captured["context"] = context
+
+    monkeypatch.setattr(backend, "_post_safely", fake_post_safely)
+    backend._client = object()  # type: ignore[assignment]
+
+    snapshot = TelemetrySnapshot(
+        device_id="ESP32_001",
+        bpm=101,
+        spo2=94,
+        sensor_connected=True,
+        device_timestamp=1710000002,
+        received_at=utc_now(),
+        prediction_state="WARNING",
+        prediction_confidence=0.58,
+        prediction_reasoning="Recent biometric trend needs attention",
+    )
+
+    asyncio.run(backend.forward_telemetry(snapshot))
+
+    payload = captured["payload"]
+    assert captured["path"] == "/internal/telemetry"
+    assert isinstance(payload, dict)
+    assert payload["predictionState"] == "WARNING"
+    assert payload["predictionConfidence"] == 0.58
+    assert payload["predictionReasoning"] == "Recent biometric trend needs attention"
+
+
 # Verifica que sin auth la conexion se cierre con error.
 def test_telemetry_without_auth_closes_connection() -> None:
     with TestClient(create_app(build_settings())) as client:
@@ -111,7 +152,8 @@ def test_telemetry_without_auth_closes_connection() -> None:
 
 
 # Verifica que un payload invalido responda error antes de cerrar.
-def test_invalid_telemetry_payload_returns_error_message() -> None:
+@pytest.mark.parametrize("bpm", [10, 251])
+def test_invalid_telemetry_payload_returns_error_message(bpm: int) -> None:
     with TestClient(create_app(build_settings())) as client:
         with client.websocket_connect("/ws/device") as websocket:
             websocket.send_json(
@@ -129,7 +171,7 @@ def test_invalid_telemetry_payload_returns_error_message() -> None:
                     "type": "telemetry",
                     "deviceId": "ESP32_001",
                     "timestamp": 1710000000,
-                    "bpm": 10,
+                    "bpm": bpm,
                     "spo2": 98,
                     "sensorConnected": True,
                 }
