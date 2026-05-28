@@ -10,12 +10,15 @@ wscat -c ws://localhost:8080/ws/device
 
 ## 2. Authenticate the ESP32
 
+For backend-integrated tests, use the registered device MAC as `deviceId` and configure
+`DEVICE_TOKENS_JSON={"AA:BB:CC:DD:EE:29":"abc123"}`.
+
 Send:
 
 ```json
 {
   "type": "auth",
-  "deviceId": "ESP32_001",
+  "deviceId": "AA:BB:CC:DD:EE:29",
   "token": "abc123"
 }
 ```
@@ -25,17 +28,19 @@ Expected response:
 ```json
 {
   "type": "auth_ok",
-  "deviceId": "ESP32_001",
+  "deviceId": "AA:BB:CC:DD:EE:29",
   "timestamp": "2026-04-23T00:00:00+00:00"
 }
 ```
 
 ## 3. Send telemetry
 
+Valid ranges: `bpm` 25–250, `spo2` 50–100, `timestamp` > 0.
+
 ```json
 {
   "type": "telemetry",
-  "deviceId": "ESP32_001",
+  "deviceId": "AA:BB:CC:DD:EE:29",
   "timestamp": 1710000000,
   "bpm": 92,
   "spo2": 98,
@@ -43,12 +48,34 @@ Expected response:
 }
 ```
 
+After several samples, `GET /api/devices/AA:BB:CC:DD:EE:29/telemetry/latest` may include prediction fields:
+
+```json
+{
+  "deviceId": "AA:BB:CC:DD:EE:29",
+  "latestTelemetry": {
+    "deviceId": "AA:BB:CC:DD:EE:29",
+    "bpm": 92,
+    "spo2": 98,
+    "sensorConnected": true,
+    "deviceTimestamp": 1710000000,
+    "receivedAt": "2026-05-15T12:00:00+00:00",
+    "predictionState": "STABLE",
+    "predictionConfidence": 0.85,
+    "predictionReasoning": "Trend within baseline"
+  },
+  "recentHistory": []
+}
+```
+
+Prediction states: `STABLE`, `WARNING`, `PRE_CRISIS`, `INSUFFICIENT_DATA`.
+
 ## 4. Send heartbeat
 
 ```json
 {
   "type": "heartbeat",
-  "deviceId": "ESP32_001",
+  "deviceId": "AA:BB:CC:DD:EE:29",
   "timestamp": 1710000001
 }
 ```
@@ -58,7 +85,7 @@ Expected response:
 ```json
 {
   "type": "ack",
-  "deviceId": "ESP32_001",
+  "deviceId": "AA:BB:CC:DD:EE:29",
   "commandId": "cmd-001",
   "status": "applied"
 }
@@ -82,7 +109,7 @@ If the payload is not valid JSON, the socket is closed with an `invalid_json` er
 
 ## 8. Device mismatch
 
-If the session is authenticated as `ESP32_001` and then sends a message with another `deviceId`,
+If the session is authenticated as `AA:BB:CC:DD:EE:29` and then sends a message with another `deviceId`,
 the gateway closes the connection with `device_mismatch`.
 
 ## 9. Check connected devices
@@ -94,19 +121,19 @@ curl http://localhost:8080/api/devices/connected
 ## 10. Check device status
 
 ```bash
-curl http://localhost:8080/api/devices/ESP32_001/status
+curl http://localhost:8080/api/devices/AA%3ABB%3ACC%3ADD%3AEE%3A29/status
 ```
 
 ## 11. Check latest telemetry
 
 ```bash
-curl http://localhost:8080/api/devices/ESP32_001/telemetry/latest
+curl http://localhost:8080/api/devices/AA%3ABB%3ACC%3ADD%3AEE%3A29/telemetry/latest
 ```
 
 ## 12. Send a light command from REST
 
 ```bash
-curl -X POST http://localhost:8080/api/devices/ESP32_001/commands/light \
+curl -X POST http://localhost:8080/api/devices/AA%3ABB%3ACC%3ADD%3AEE%3A29/commands/light \
   -H "Content-Type: application/json" \
   -d "{\"color\":\"#4A90E2\",\"intensity\":60,\"mode\":\"calm\"}"
 ```
@@ -163,11 +190,21 @@ curl http://localhost:8080/actuator/health
 
 ## 16. Reconnection scenario
 
-1. Connect and authenticate as `ESP32_001`.
+1. Connect and authenticate as `AA:BB:CC:DD:EE:29`.
 2. Close the socket or let it timeout.
 3. Open a new WebSocket connection to `/ws/device`.
 4. Send `auth` again with the same `deviceId` and token.
 5. Expected result:
    - the new session becomes active
    - telemetry is accepted again only after the new `auth`
-   - if an older session still existed, the newest one replaces it
+   - if an older session still existed, the newest one replaces it (close code `4000`, reason `session_replaced`)
+
+## 17. WebSocket close codes (reference)
+
+| Code | Meaning |
+|------|---------|
+| `4000` | Session replaced by a newer connection for the same device |
+| `4001` | Heartbeat / activity timeout |
+| `4003` | Invalid device credentials on `auth` |
+| `4004` | Protocol violation (`unauthenticated`, `device_mismatch`, etc.) |
+| `1003` | Invalid JSON or unsupported message type |

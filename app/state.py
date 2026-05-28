@@ -22,6 +22,9 @@ class TelemetrySnapshot:
     sensor_connected: bool
     device_timestamp: int
     received_at: datetime
+    prediction_state: str = "INSUFFICIENT_DATA"
+    prediction_confidence: float = 0.0
+    prediction_reasoning: str = "Prediction not evaluated yet"
 
 
 @dataclass(slots=True)

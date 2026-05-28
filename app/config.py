@@ -13,6 +13,21 @@ def _parse_int(raw_value: str | None, default: int) -> int:
         return default
 
 
+# Convierte un valor de entorno a flotante con fallback seguro.
+def _parse_float(raw_value: str | None, default: float) -> float:
+    try:
+        return float(raw_value if raw_value is not None else default)
+    except (TypeError, ValueError):
+        return default
+
+
+# Convierte flags de entorno a booleanos simples.
+def _parse_bool(raw_value: str | None, default: bool) -> bool:
+    if raw_value is None or raw_value.strip() == "":
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # Convierte la lista de origenes desde variables de entorno.
 def _parse_allowed_origins(raw_value: str | None) -> list[str]:
     if raw_value is None or raw_value.strip() == "":
@@ -67,6 +82,19 @@ class FallbackSettings:
 
 
 @dataclass(slots=True)
+# Agrupa la configuracion del predictor clinico.
+class PredictionSettings:
+    gemini_api_key: str
+    gemini_model: str
+    gemini_enabled: bool
+    prediction_window_seconds: int
+    prediction_interval_seconds: int
+    prediction_min_samples: int
+    warning_bpm_trend_threshold: float
+    warning_spo2_trend_threshold: float
+
+
+@dataclass(slots=True)
 # Centraliza la configuracion externa del servicio.
 class Settings:
     app_name: str
@@ -82,6 +110,7 @@ class Settings:
     integration_timeout_ms: int
     device_tokens: dict[str, str]
     fallback: FallbackSettings
+    prediction: PredictionSettings
 
     # Carga la configuracion usando variables de entorno.
     @classmethod
@@ -109,5 +138,16 @@ class Settings:
                     "Calm mode - backend unavailable",
                 ).strip()
                 or "Calm mode - backend unavailable",
+            ),
+            prediction=PredictionSettings(
+                gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+                gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite").strip()
+                or "gemini-2.5-flash-lite",
+                gemini_enabled=_parse_bool(os.getenv("GEMINI_ENABLED"), True),
+                prediction_window_seconds=_parse_int(os.getenv("PREDICTION_WINDOW_SECONDS"), 30),
+                prediction_interval_seconds=_parse_int(os.getenv("PREDICTION_INTERVAL_SECONDS"), 20),
+                prediction_min_samples=_parse_int(os.getenv("PREDICTION_MIN_SAMPLES"), 8),
+                warning_bpm_trend_threshold=_parse_float(os.getenv("WARNING_BPM_TREND"), 12.0),
+                warning_spo2_trend_threshold=_parse_float(os.getenv("WARNING_SPO2_TREND"), 2.0),
             ),
         )

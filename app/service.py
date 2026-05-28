@@ -11,6 +11,7 @@ from starlette.websockets import WebSocketState
 
 from app.backend import BackendClient
 from app.config import Settings
+from app.crisis_predictor import CrisisPredictor
 from app.schemas import (
     AckMessage,
     AuthMessage,
@@ -32,7 +33,7 @@ from app.state import DeviceRegistry, DeviceSession, TelemetrySnapshot, utc_now
 LOGGER = logging.getLogger("neurolive.realtime.gateway")
 
 
-# Señala un cierre esperado del canal WebSocket.
+# Senala un cierre esperado del canal WebSocket.
 class ConnectionClosed(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -46,6 +47,7 @@ class RealtimeGatewayService:
         self.settings = settings
         self.registry = DeviceRegistry(history_limit=settings.telemetry_history_limit)
         self.backend = BackendClient(settings)
+        self.predictor = CrisisPredictor(settings.prediction)
         self._stop_event = asyncio.Event()
         self._timeout_task: asyncio.Task[None] | None = None
         self._background_tasks: set[asyncio.Task[object]] = set()
@@ -73,6 +75,7 @@ class RealtimeGatewayService:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
 
         await self.backend.close()
+        await self.predictor.close()
 
     # Atiende una conexion WebSocket del ESP32.
     async def handle_connection(self, websocket: WebSocket) -> None:
@@ -231,6 +234,10 @@ class RealtimeGatewayService:
             device_timestamp=message.timestamp,
             received_at=utc_now(),
         )
+        prediction = await self.predictor.evaluate(snapshot)
+        snapshot.prediction_state = prediction.state.value
+        snapshot.prediction_confidence = prediction.confidence
+        snapshot.prediction_reasoning = prediction.reasoning
         await self.registry.store_telemetry(session, snapshot)
         self._spawn_task(self.backend.forward_telemetry(snapshot))
 
@@ -300,6 +307,7 @@ class RealtimeGatewayService:
 
         was_active = await self.registry.unregister_if_active(session, reason)
         if was_active:
+            await self.predictor.clear_device(session.device_id)
             self._spawn_task(self.backend.notify_disconnected(session.device_id, reason, utc_now()))
 
     # Supervisa timeouts de inactividad del canal realtime.
@@ -333,6 +341,9 @@ class RealtimeGatewayService:
             sensorConnected=snapshot.sensor_connected,
             deviceTimestamp=snapshot.device_timestamp,
             receivedAt=snapshot.received_at,
+            predictionState=snapshot.prediction_state,
+            predictionConfidence=snapshot.prediction_confidence,
+            predictionReasoning=snapshot.prediction_reasoning,
         )
 
     # Envia JSON de forma segura por la sesion activa.

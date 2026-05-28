@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.config import FallbackSettings, Settings
+from app.config import FallbackSettings, PredictionSettings, Settings
 from app.main import create_app
 
 
@@ -27,6 +27,16 @@ def build_settings() -> Settings:
             led_mode="calm",
             heartbeat_interval_seconds=10,
             description="Calm mode - backend unavailable",
+        ),
+        prediction=PredictionSettings(
+            gemini_api_key="",
+            gemini_model="gemini-2.5-flash-lite",
+            gemini_enabled=False,
+            prediction_window_seconds=30,
+            prediction_interval_seconds=20,
+            prediction_min_samples=3,
+            warning_bpm_trend_threshold=12.0,
+            warning_spo2_trend_threshold=2.0,
         ),
     )
 

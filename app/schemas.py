@@ -96,6 +96,9 @@ class TelemetrySnapshotResponse(BaseModel):
     sensorConnected: bool
     deviceTimestamp: int
     receivedAt: datetime
+    predictionState: str
+    predictionConfidence: float
+    predictionReasoning: str
 
 
 # Expone la telemetria mas reciente y un historial corto.
